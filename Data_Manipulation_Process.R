@@ -3,7 +3,7 @@
 getwd()
 # create path relative to project root
 #data_path <- "/cloud/project/data/DataSet_No_Details.csv"
-data_path <- "C:\\Users\\admin\\Documents\\Data_Analysis_2025\\Data\\DataSet_No_Details.csv"
+data_path <- "DataSet_No_Details.csv"
 #----------------read dataset--------------------------
 df <- read.csv(data_path)
 # Display structure with variable types
@@ -44,11 +44,11 @@ data.frame(
 )
 
 #-------------------Visualizing Missing Data Patterns------------------
-install.packages(visdat)
+install.packages("visdat")
 library(visdat)
 vis_miss(MD_df)  # Visualizes NA patterns
 
-install.packages(naniar)
+install.packages('naniar')
 library(naniar)
 gg_miss_var(MD_df)  # Barplot of missingness per variable
 #------------------ Analyzing the Impact of Missing Data--------------
@@ -59,69 +59,92 @@ handle_MD_df <- MD_df %>% select(-any_of(cols_to_remove1))
 str(handle_MD_df)
 
 #------------------Performing Little's MCAR Test----------------------
-#Homework!!!
-#Hypotheses:
+# Homework!!!
+# Hypotheses:
 #  H₀ (Null Hypothesis): Data is MCAR.
+library(naniar)
+handle_MD_df_numeric <- handle_MD_df %>% select(-record_id)
+mcar_test_result <- mcar_test(handle_MD_df_numeric)
+print(mcar_test_result)
 
-#H₁ (Alternative Hypothesis): Data is not MCAR (either MAR or MNAR).
+# H₁ (Alternative Hypothesis): Data is not MCAR (either MAR or MNAR).
 
-#If p-value > 0.05, we fail to reject H₀ (data is likely MCAR).
-#If p-value ≤ 0.05, we reject H₀ (data is likely not MCAR).
+if (mcar_test_result$p.value > 0.05) {
+  cat("p > 0.05，Fail to reject H₀ (data is MCAR)")
+} else {
+  cat("p ≤ 0.05，Reject H₀ (data is not MCAR, likely MAR/MNAR)")
+}
+
+# If p-value > 0.05, we fail to reject H₀ (data is likely MCAR).
+# If p-value ≤ 0.05, we reject H₀ (data is likely not MCAR).
 #------------------Imputation with MICE-------------------------------
 # Install packages if they are not already installed
-install.packages(c("mice", "ggplot2", "naniar"))
+# install.packages(c("mice", "ggplot2", "naniar"))
+
 # Load the packages
 library(mice)
 library(ggplot2)
 library(naniar)
 
-# Perform Multiple Imputation
+# Perform Multiple Imputation using PMM (Predictive Mean Matching)
 imputed_handle_MD_df <- mice(handle_MD_df, m=5, method='pmm', print=FALSE)
-# Perform Multiple Imputation 
-#Random Forest method 
-#------For complex nonlinear relationships between variables------------
 
-imputed_handle_MD_df <- mice(handle_MD_df[, !names(handle_MD_df) %in% "New"], method="rf")  
-  imputed_handle_MD_df_final <- complete(imputed_handle_MD_df)  # generate full data
-# Density plots 
+# Perform Multiple Imputation using Random Forests (RF)
+install.packages("ranger")
+library(ranger)
+imputed_handle_MD_df1 <- mice(handle_MD_df, m=5, method='rf', print=FALSE)
+
+# Random Forest method for complex nonlinear relationships between variables
+imputed_handle_MD_df <- mice(handle_MD_df[, !names(handle_MD_df) %in% "New"], method="pmm")  
+imputed_handle_MD_df_final <- complete(imputed_handle_MD_df)  # Generate full data
+
+# Density plots for hormone10_generated variable
 ggplot(handle_MD_df, aes(x=hormone10_generated, fill="Original")) +
   geom_density(alpha=0.5) +
   geom_density(data=imputed_handle_MD_df_final, aes(x=hormone10_generated, fill="Imputed"), alpha=0.5) +
-  labs(title="Density Plot of hormone10_generated: Original vs. Imputed")+
-  scale_x_continuous(limits = c(0, 2))
+  labs(title="Density Plot of hormone10_generated: Original vs. Imputed") +
+  scale_x_continuous(limits = c(0, 2)) +
+  theme_minimal()
 
-#Predictive Mean Matching 
-#------default for numeric data------------
-#Homework!!!
-imputed_handle_MD_df1 <- mice(handle_MD_df[, !names(handle_MD_df) %in% "New"], method="pmm")  
-imputed_handle_MD_df_final1 <- complete(imputed_handle_MD_df)  # generate full data
-# Density plots 
+# Predictive Mean Matching
+# Homework!!!
+imputed_handle_MD_df1 <- mice(handle_MD_df[, !names(handle_MD_df) %in% "New"], method="rf")  
+imputed_handle_MD_df_final1 <- complete(imputed_handle_MD_df1)  # Generate full data
+
+# Density plots for hormone10_generated variable (after RF imputation)
 ggplot(handle_MD_df, aes(x=hormone10_generated, fill="Original")) +
   geom_density(alpha=0.5) +
   geom_density(data=imputed_handle_MD_df_final1, aes(x=hormone10_generated, fill="Imputed"), alpha=0.5) +
-  labs(title="Density Plot of hormone10_generated: Original vs. Imputed")+
-  scale_x_continuous(limits = c(0, 2))
-                     
+  labs(title="Density Plot of hormone10_generated: Original vs. Imputed") +
+  scale_x_continuous(limits = c(0, 2)) +
+  theme_minimal()
+
+#-------------------------export------------------------------
+write.csv(imputed_handle_MD_df_final, "imputed_data.csv", row.names = FALSE)
+
 #----------------Outlier Detection Methods------------------------
-library(ggplot2)
 library(tidyr)
+library(dplyr)
+
+# Selecting variables for outlier detection
 outliers_data <- imputed_handle_MD_df_final %>%
   select(lipids1, lipids2, lipids3, lipids4, lipids5) %>%
   pivot_longer(everything(), names_to = "variable", values_to = "value")
 
-# build a graph 
+# Create a boxplot for outlier detection
 ggplot(outliers_data, aes(x = variable, y = value)) +
   geom_boxplot(fill = "lightblue", alpha = 0.7) +
   labs(title = "Outlier Detection",
-       x = "variables",
-       y = "value") +
+       x = "Variables",
+       y = "Value") +
   theme_minimal()
-#build a graph for all dataset
+
+# Boxplot for all numeric data for outlier detection
 imputed_handle_MD_df_final %>%
   select(where(is.numeric)) %>%
   pivot_longer(everything()) %>%
   ggplot(aes(y = value)) +
   geom_boxplot() +
   facet_wrap(~name, scales = "free") +
-  labs(title = "Boxplots for Outlier Detection")
-
+  labs(title = "Boxplots for Outlier Detection") +
+  theme_minimal()
